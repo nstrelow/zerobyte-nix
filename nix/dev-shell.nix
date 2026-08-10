@@ -45,6 +45,13 @@ let
     (cd "$tmpdir" && ${bun2nixPkgs.bun2nix}/bin/bun2nix -o "$(pwd)/bun.nix") || exit 1
     cp "$tmpdir/bun.nix" ./bun.nix
     rm -rf "$tmpdir"
+
+    # Upstream is a bun workspace ("apps/*", "packages/*"). bun2nix serialises each
+    # workspace member as `copyPathToStore ./packages/<name>`, a path relative to
+    # bun.nix -- i.e. this repo, where it does not exist, so fetchBunDeps fails to
+    # evaluate. The entries are redundant anyway: bun2nix.hook runs a real
+    # `bun install` inside the source tree, and bun links workspace members itself.
+    ${pkgs.gnused}/bin/sed -i '/ = copyPathToStore /d' ./bun.nix
     echo -e "\033[1;32m==>\033[0m Updated bun.nix for $TAG"
     echo -e "\033[0;90m    Commit: git add bun.nix && git commit -m 'chore: update bun.nix'\033[0m"
   '';

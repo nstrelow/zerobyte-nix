@@ -12,7 +12,7 @@ Nix flake for [Zerobyte](https://github.com/nicotsx/zerobyte) - a self-hosted ba
 
 - Pure Nix flake packaging of Zerobyte
 - NixOS module with systemd service
-- Includes [shoutrrr](https://github.com/containrrr/shoutrrr) for notifications
+- Includes [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) for notifications
 - FUSE mount support on Linux
 
 ## Usage
@@ -36,6 +36,10 @@ Nix flake for [Zerobyte](https://github.com/nicotsx/zerobyte) - a self-hosted ba
             enable = true;
             port = 4096;
             openFirewall = true;
+
+            # Required. Zerobyte refuses to start without these.
+            baseUrl = "https://backup.example.com";
+            appSecretFile = "/run/agenix/zerobyte-app-secret";
           };
         }
       ];
@@ -57,17 +61,32 @@ Nix flake for [Zerobyte](https://github.com/nicotsx/zerobyte) - a self-hosted ba
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | Enable Zerobyte service |
+| `baseUrl` | string | *(required)* | Public URL including protocol; also sets cookie security |
+| `appSecretFile` | path | *(required)* | File holding the 32–256 char `APP_SECRET`, loaded via systemd credentials |
+| `package` | package | this flake's `zerobyte` | Package to use |
 | `port` | int | `4096` | Port to listen on |
 | `dataDir` | path | `/var/lib/zerobyte` | Data directory |
+| `rcloneConfigDir` | path | `${dataDir}/rclone` | Writable directory for `rclone.conf` |
 | `user` | string | `"zerobyte"` | User to run as |
 | `group` | string | `"zerobyte"` | Group to run as |
+| `createUser` | bool | `true` | Create the user/group automatically |
 | `openFirewall` | bool | `false` | Open firewall port |
-| `trustedOrigins` | list | `[]` | Trusted origins for CORS (for reverse proxy) |
+| `serverIp` | string | `"0.0.0.0"` | Bind address |
+| `timezone` | string | `"UTC"` | Timezone used for schedules |
+| `resticHostname` | string | `"zerobyte"` | Hostname recorded in restic snapshots |
+| `trustProxy` | bool | `false` | Trust `X-Forwarded-*` headers (reverse proxy only) |
+| `trustedOrigins` | list | `[]` | Additional trusted origins for CORS |
 | `serverIdleTimeout` | int | `60` | Server idle timeout in seconds |
 | `disableRateLimiting` | bool | `false` | Disable rate limiting (dev/testing only) |
 | `fuse.enable` | bool | `true` | Enable FUSE support (Linux only) |
 | `protectHome` | bool | `true` | Enable ProtectHome hardening |
 | `extraReadWritePaths` | list | `[]` | Additional writable paths |
+| `extraPackages` | list | `[]` | Extra packages on the service PATH |
+| `environment` | attrs | `{}` | Extra environment variables (merged last) |
+
+> **Note:** values set via `environment` land in the world-readable Nix store.
+> Use `appSecretFile` for the application secret, and let Zerobyte manage
+> repository and cloud credentials in its own database.
 
 ## Development
 
@@ -88,8 +107,8 @@ This flake follows upstream releases (tags). To update to a new version:
 
 ```bash
 # 1. Update version in flake.nix (both zerobyte-src URL and config.version)
-#    zerobyte-src.url = "github:nicotsx/zerobyte/v0.21.0"
-#    version = "0.21.0"
+#    zerobyte-src.url = "github:nicotsx/zerobyte/v0.42.0"
+#    version = "0.42.0"
 
 # 2. Update flake.lock
 nix flake update zerobyte-src
@@ -101,7 +120,7 @@ update-bun-nix
 # 4. Test and commit
 nix build
 git add flake.nix flake.lock bun.nix
-git commit -m "chore: update to v0.21.0"
+git commit -m "chore: update to v0.42.0"
 ```
 
 The `bun.nix` file must always match the upstream release referenced in `flake.lock`.
@@ -116,4 +135,4 @@ Zerobyte itself is licensed under the [GNU Affero General Public License v3.0 (A
 
 - [Zerobyte](https://github.com/nicotsx/zerobyte) by nicotsx
 - [Restic](https://restic.net/) backup program
-- [shoutrrr](https://github.com/containrrr/shoutrrr) notification library
+- [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) notification library (maintained fork of containrrr/shoutrrr)

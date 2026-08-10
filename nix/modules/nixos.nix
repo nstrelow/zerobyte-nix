@@ -85,6 +85,68 @@ in
       description = "Additional environment variables for Zerobyte.";
     };
 
+    baseUrl = lib.mkOption {
+      type = lib.types.str;
+      example = "https://backup.example.com";
+      description = ''
+        Public URL Zerobyte is reached on, including the protocol.
+        Required: upstream refuses to start without it, and it is added to the
+        trusted origins automatically. An https:// URL also marks session
+        cookies as secure.
+      '';
+    };
+
+    trustProxy = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Trust X-Forwarded-* headers from a reverse proxy.
+        Enable only when Zerobyte is actually behind one, otherwise clients can
+        spoof their source address.
+      '';
+    };
+
+    appSecretFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = "/run/agenix/zerobyte-app-secret";
+      description = ''
+        Path to a file containing the application secret (32-256 characters),
+        used to encrypt credentials stored in Zerobyte's database.
+
+        The file is passed to the service via systemd's LoadCredential, so it is
+        read as root before privileges are dropped and never needs to be
+        readable by the service user.
+
+        Generate one with `openssl rand -hex 32`. Losing it makes every stored
+        repository password unrecoverable.
+      '';
+    };
+
+    rcloneConfigDir = lib.mkOption {
+      type = lib.types.path;
+      defaultText = lib.literalExpression ''"''${dataDir}/rclone"'';
+      example = "/var/lib/zerobyte/rclone";
+      description = ''
+        Directory holding rclone.conf.
+
+        Zerobyte *writes* this file when remotes are managed through the web UI,
+        so it must be writable. To seed it with an existing configuration, copy
+        the file into place before the service starts rather than pointing this
+        at a read-only secret.
+      '';
+    };
+
+    extraPackages = lib.mkOption {
+      type = lib.types.listOf lib.types.package;
+      default = [ ];
+      example = lib.literalExpression "[ pkgs.nfs-utils ]";
+      description = ''
+        Extra packages to place on the service's PATH, for backends the
+        bundled wrapper does not already cover.
+      '';
+    };
+
     trustedOrigins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -153,6 +215,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.appSecretFile != null;
+        message = ''
+          services.zerobyte.appSecretFile must be set: Zerobyte requires an
+          APP_SECRET and exits on startup without one. Generate a secret with
+          `openssl rand -hex 32` and store it outside the Nix store (e.g. with
+          agenix or sops-nix).
+        '';
+      }
+    ];
+
+    services.zerobyte.rcloneConfigDir = lib.mkDefault "${cfg.dataDir}/rclone";
+
     users.users.${cfg.user} = lib.mkIf cfg.createUser {
       isSystemUser = true;
       group = cfg.group;
@@ -168,6 +244,12 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0750 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/data 0750 ${cfg.user} ${cfg.group} -"
+      "d ${cfg.dataDir}/repositories 0750 ${cfg.user} ${cfg.group} -"
+      "d ${cfg.dataDir}/volumes 0750 ${cfg.user} ${cfg.group} -"
+      "d ${cfg.dataDir}/restic 0750 ${cfg.user} ${cfg.group} -"
+      "d ${cfg.dataDir}/restic/cache 0750 ${cfg.user} ${cfg.group} -"
+      # rclone.conf holds cloud credentials in cleartext
+      "d ${cfg.rcloneConfigDir} 0700 ${cfg.user} ${cfg.group} -"
     ];
 
     systemd.services.zerobyte = {
@@ -175,14 +257,24 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
 
+      path = cfg.extraPackages;
+
       environment = {
         NODE_ENV = "production";
         PORT = toString cfg.port;
         SERVER_IP = cfg.serverIp;
         SERVER_IDLE_TIMEOUT = toString cfg.serverIdleTimeout;
         RESTIC_HOSTNAME = cfg.resticHostname;
-        DATABASE_URL = "${cfg.dataDir}/data/zerobyte.db";
-        MIGRATIONS_PATH = "${cfg.package}/lib/zerobyte/drizzle";
+        BASE_URL = cfg.baseUrl;
+        TRUST_PROXY = lib.boolToString cfg.trustProxy;
+        # systemd exposes credentials under $CREDENTIALS_DIRECTORY (%d)
+        APP_SECRET_FILE = "%d/app-secret";
+        ZEROBYTE_DATABASE_URL = "${cfg.dataDir}/data/zerobyte.db";
+        ZEROBYTE_REPOSITORIES_DIR = "${cfg.dataDir}/repositories";
+        ZEROBYTE_VOLUMES_DIR = "${cfg.dataDir}/volumes";
+        RESTIC_CACHE_DIR = "${cfg.dataDir}/restic/cache";
+        RCLONE_CONFIG_DIR = cfg.rcloneConfigDir;
+        MIGRATIONS_PATH = "${cfg.package}/lib/zerobyte/assets/migrations";
         APP_VERSION = cfg.package.version;
         TZ = cfg.timezone;
       }
@@ -195,6 +287,7 @@ in
       // cfg.environment;
 
       serviceConfig = {
+        LoadCredential = [ "app-secret:${toString cfg.appSecretFile}" ];
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
@@ -239,8 +332,14 @@ in
         RemoveIPC = true;
         PrivateMounts = !cfg.fuse.enable;
 
-        # Allow write access to data directory
-        ReadWritePaths = [ cfg.dataDir ] ++ (map toString cfg.extraReadWritePaths);
+        # Allow write access to data directory. rcloneConfigDir is listed
+        # separately because it may be placed outside dataDir, and Zerobyte
+        # rewrites rclone.conf whenever remotes change.
+        ReadWritePaths = [
+          cfg.dataDir
+          cfg.rcloneConfigDir
+        ]
+        ++ (map toString cfg.extraReadWritePaths);
       }
       # State directory (only set when using default dataDir)
       // lib.optionalAttrs (cfg.dataDir == "/var/lib/zerobyte") {

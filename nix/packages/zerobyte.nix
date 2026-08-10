@@ -24,6 +24,24 @@ let
   # Version from flake config (must match zerobyte-src tag)
   inherit (config) version;
 
+  # Runtime tools the server shells out to. Upstream ships these in its
+  # container image (see the Dockerfile "base" stage); on NixOS they come
+  # from the wrapper PATH instead.
+  runtimeTools = [
+    pkgs.restic
+    pkgs.rclone
+    shoutrrr
+    pkgs.openssh
+  ]
+  ++ lib.optionals isLinux [
+    pkgs.fuse3
+    pkgs.davfs2
+    pkgs.sshfs # sftp volumes
+    pkgs.cifs-utils # smb volumes
+    pkgs.acl
+    pkgs.attr
+  ];
+
 in
 pkgs.stdenv.mkDerivation {
   pname = "zerobyte";
@@ -42,6 +60,17 @@ pkgs.stdenv.mkDerivation {
     bunNix = config.bunNix;
   };
 
+  # Build-time values baked into the client bundle. Upstream passes these as
+  # Docker build args; the versions are shown in the UI's "about" panel, so
+  # they must reflect what the wrapper actually puts on PATH.
+  env = {
+    VITE_APP_VERSION = version;
+    VITE_RESTIC_VERSION = pkgs.restic.version;
+    VITE_RCLONE_VERSION = pkgs.rclone.version;
+    VITE_SHOUTRRR_VERSION = shoutrrr.version;
+    VITE_GIT_HOOKS = "0"; # don't let lefthook touch git during the build
+  };
+
   buildPhase = ''
     runHook preBuild
 
@@ -51,48 +80,33 @@ pkgs.stdenv.mkDerivation {
     # Network is blocked by Nix sandbox, but this makes failures clearer
     export BUN_INSTALL_BIN=$HOME/.bun/bin
 
-    # Build the application (react-router build)
+    # Build the application (vite build -> .output/)
     bun run build
+
+    # The agent is a separate bundle, built exactly as upstream's Dockerfile does
+    bun build apps/agent/src/index.ts --outfile .output/agent/index.mjs --target bun
 
     runHook postBuild
   '';
 
+  # Mirrors upstream's "production" image layout: the vite build is
+  # self-contained, so no node_modules is needed at runtime.
   installPhase = ''
     runHook preInstall
 
-    # Create output directories matching the expected structure
-    mkdir -p $out/lib/zerobyte/dist
-    mkdir -p $out/lib/zerobyte/drizzle
+    mkdir -p $out/lib/zerobyte/assets/migrations
     mkdir -p $out/bin
 
-    # Copy built assets (server expects dist/server and dist/client)
-    cp -r dist/server $out/lib/zerobyte/dist/server
-    cp -r dist/client $out/lib/zerobyte/dist/client
-    cp -r app/drizzle/* $out/lib/zerobyte/drizzle/
+    cp -r .output $out/lib/zerobyte/.output
+    cp -r app/drizzle/* $out/lib/zerobyte/assets/migrations/
     cp package.json $out/lib/zerobyte/
 
-    # Copy node_modules for runtime dependencies
-    cp -r node_modules $out/lib/zerobyte/
-
     # Create wrapper script with runtime dependencies
-    # --chdir ensures server finds dist/client relative to package dir
+    # --chdir ensures the server resolves its assets relative to the package dir
     makeWrapper ${pkgs.bun}/bin/bun $out/bin/zerobyte \
       --chdir $out/lib/zerobyte \
-      --add-flags "dist/server/index.js" \
-      --prefix PATH : ${
-        lib.makeBinPath (
-          [
-            pkgs.restic
-            pkgs.rclone
-            shoutrrr
-            pkgs.openssh
-          ]
-          ++ lib.optionals isLinux [
-            pkgs.fuse3
-            pkgs.davfs2
-          ]
-        )
-      } \
+      --add-flags ".output/server/index.mjs" \
+      --prefix PATH : ${lib.makeBinPath runtimeTools} \
       --set NODE_ENV "production"
 
     runHook postInstall
