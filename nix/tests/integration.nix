@@ -33,7 +33,11 @@ pkgs.testers.nixosTest {
     machine.wait_for_unit("zerobyte.service")
     machine.wait_for_open_port(4096)
 
-    # v0.41 moved the healthcheck under /api (returns {"status":"ok"})
+    # v0.41 moved the healthcheck under /api (returns {"status":"ok"}).
+    # Retry rather than hitting it once: the listener opens before the router
+    # is ready, which a KVM-less (TCG-emulated) runner reliably loses the race
+    # against, yielding an empty reply.
+    machine.wait_until_succeeds("curl -sf http://localhost:4096/api/healthcheck", timeout=120)
     result = machine.succeed("curl -s http://localhost:4096/api/healthcheck")
     assert '"status":"ok"' in result or '"ok"' in result, f"Healthcheck failed: {result}"
 

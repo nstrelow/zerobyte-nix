@@ -52,6 +52,10 @@ let
     # evaluate. The entries are redundant anyway: bun2nix.hook runs a real
     # `bun install` inside the source tree, and bun links workspace members itself.
     ${pkgs.gnused}/bin/sed -i '/ = copyPathToStore /d' ./bun.nix
+
+    # bun2nix emits no trailing newline, which `nix fmt` / the formatting check
+    # rejects.
+    [ -n "$(tail -c 1 ./bun.nix)" ] && printf '\n' >> ./bun.nix
     echo -e "\033[1;32m==>\033[0m Updated bun.nix for $TAG"
     echo -e "\033[0;90m    Commit: git add bun.nix && git commit -m 'chore: update bun.nix'\033[0m"
   '';
