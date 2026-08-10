@@ -137,6 +137,19 @@ in
       '';
     };
 
+    webhookAllowedOrigins = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "http://ntfy.internal:2586" ];
+      description = ''
+        Origins that notification destinations and webhooks may target.
+
+        Zerobyte refuses to create a notification destination whose origin is
+        not listed here, so any self-hosted target (ntfy, gotify, a webhook
+        receiver) must be added before it can be configured.
+      '';
+    };
+
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [ ];
@@ -280,6 +293,9 @@ in
       }
       // lib.optionalAttrs (cfg.trustedOrigins != [ ]) {
         TRUSTED_ORIGINS = lib.concatStringsSep "," cfg.trustedOrigins;
+      }
+      // lib.optionalAttrs (cfg.webhookAllowedOrigins != [ ]) {
+        WEBHOOK_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.webhookAllowedOrigins;
       }
       // lib.optionalAttrs cfg.disableRateLimiting {
         DISABLE_RATE_LIMITING = "true";

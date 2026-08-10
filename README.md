@@ -81,6 +81,7 @@ Nix flake for [Zerobyte](https://github.com/nicotsx/zerobyte) - a self-hosted ba
 | `fuse.enable` | bool | `true` | Enable FUSE support (Linux only) |
 | `protectHome` | bool | `true` | Enable ProtectHome hardening |
 | `extraReadWritePaths` | list | `[]` | Additional writable paths |
+| `webhookAllowedOrigins` | list | `[]` | Origins notification destinations/webhooks may target |
 | `extraPackages` | list | `[]` | Extra packages on the service PATH |
 | `environment` | attrs | `{}` | Extra environment variables (merged last) |
 
