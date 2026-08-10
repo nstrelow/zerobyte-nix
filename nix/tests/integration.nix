@@ -41,8 +41,22 @@ pkgs.testers.nixosTest {
     result = machine.succeed("curl -s http://localhost:4096/api/healthcheck")
     assert '"status":"ok"' in result or '"ok"' in result, f"Healthcheck failed: {result}"
 
-    # The secret must reach the service via systemd credentials, not the store
-    machine.succeed("systemctl show zerobyte.service -p LoadCredential | grep -q app-secret")
+    # The secret must reach the service via systemd credentials, not the unit
+    # environment (which is world-readable in the store). systemd redacts the
+    # LoadCredential value itself, so assert on the environment instead: the
+    # service must reference the credential path and never a literal secret.
+    # systemd expands %d before exposing Environment, so this asserts on the
+    # resolved credentials directory rather than the literal specifier.
+    env = machine.succeed("systemctl show zerobyte.service -p Environment")
+    assert "APP_SECRET_FILE=/run/credentials/zerobyte.service/app-secret" in env, (
+        f"credential not wired: {env}"
+    )
+    assert "APP_SECRET=" not in env.replace("APP_SECRET_FILE=", ""), (
+        f"secret leaked into the unit environment: {env}"
+    )
+
+    # Reaching this point at all proves the secret was readable: upstream
+    # calls process.exit(1) at startup when APP_SECRET is missing or invalid.
 
     # Migrations must resolve to the packaged assets/migrations directory
     machine.succeed("test -f /var/lib/zerobyte/data/zerobyte.db")
