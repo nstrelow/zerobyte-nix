@@ -189,16 +189,16 @@
     "zerobyte-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783973567,
-        "narHash": "sha256-0PWRkqr8hAafcuKclligpfq/X282wvXHfm2no67d47Y=",
+        "lastModified": 1787482144,
+        "narHash": "sha256-gueZUwoEetsEuAG5QXvLgUUrib79sk2azcmD0XZMhQo=",
         "owner": "nicotsx",
         "repo": "zerobyte",
-        "rev": "44e4591dd24a35961e1051379768205e7c8362a4",
+        "rev": "b87c59b1fd53cb35c4e192dc20f29b1d2ff309a8",
         "type": "github"
       },
       "original": {
         "owner": "nicotsx",
-        "ref": "v0.41.0",
+        "ref": "v0.42.0",
         "repo": "zerobyte",
         "type": "github"
       }
