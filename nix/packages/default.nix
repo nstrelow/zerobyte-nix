@@ -12,6 +12,8 @@ let
     inherit pkgs system lib;
   };
 
+  bunRuntime = pkgs.callPackage ./bun-runtime.nix { };
+
   zerobyte = import ./zerobyte.nix {
     inherit
       pkgs
@@ -19,6 +21,7 @@ let
       lib
       config
       shoutrrr
+      bunRuntime
       ;
   };
 

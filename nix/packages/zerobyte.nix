@@ -6,6 +6,7 @@
   lib,
   config,
   shoutrrr,
+  bunRuntime,
 }:
 
 let
@@ -102,8 +103,10 @@ pkgs.stdenv.mkDerivation {
     cp package.json $out/lib/zerobyte/
 
     # Create wrapper script with runtime dependencies
-    # --chdir ensures the server resolves its assets relative to the package dir
-    makeWrapper ${pkgs.bun}/bin/bun $out/bin/zerobyte \
+    # --chdir ensures the server resolves its assets relative to the package dir.
+    # Runtime bun is bunRuntime (newer than nixpkgs' bun), not pkgs.bun — see
+    # bun-runtime.nix for why.
+    makeWrapper ${bunRuntime}/bin/bun $out/bin/zerobyte \
       --chdir $out/lib/zerobyte \
       --add-flags ".output/server/index.mjs" \
       --prefix PATH : ${lib.makeBinPath runtimeTools} \
